@@ -1,10 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CreateItemDto } from './dto/create-item.dto';
-import { UpdateItemDto } from './dto/update-item.dto';
+
 import { Item } from './entities/item.entity';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, Repository, UpdateDateColumn } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
-import { log } from 'console';
+import { CreateItemDto } from './dto/item/create-item.dto';
+import { UpdateItemDto } from './dto/item/update-item.dto';
+import { Listing } from './entities/listing.entity';
+import { Comment } from './entities/comment.entity';
+import { CreateCommentDto } from './dto/comment/create-comment.dto';
+import { CreateTagDto } from './dto/tag/create-tag.dto';
+import { Tag } from './entities/tag.entity';
 
 @Injectable()
 export class ItemService {
@@ -13,11 +18,30 @@ export class ItemService {
     @InjectRepository(Item) //injecter le Repostory du typorm
     private readonly itemsRepository: Repository<Item>, //creation d'un attribu repository pour recupere au data bdd
 
+    @InjectRepository(Comment)
+    private readonly commentRepository: Repository<Comment>,
+
     private readonly entitymanager: EntityManager,
   ) {}
+
+  // *******************ADD ITEM WITH Listing**
   async create(createItemDto: CreateItemDto) {
-    // **********1 creer un objet apartir de l'entity item et lui passe le dto
-    const item = new Item(createItemDto);
+    const listing = new Listing({
+      ...createItemDto.listing, //je copie tout les object createItem.listing,
+      rating: 0,
+    });
+
+    let tags:Tag[]=[];
+    if(createItemDto.tags.length!==0 && createItemDto.tags){
+    createItemDto.tags.map((create)=>(
+      tags.push(new Tag(create))
+    ))
+    }
+    
+    const {name}=createItemDto
+    const isPublic=createItemDto.public
+
+    const item = new Item({name,public:isPublic,listing,tags})
 
     // *****2 save avec entitymanager**
     await this.entitymanager.save(item);
@@ -29,33 +53,44 @@ export class ItemService {
     return await this.itemsRepository.find();
   }
 
+  // ************* R E C U P E R E R UN ITEM AVEC LISTING AND COMMENTS ***
   async findOne(id: number) {
-    return await this.itemsRepository.findOne({where : {id:id}})
+    return await this.itemsRepository.findOne({
+      where: { id: id },
+      relations: { listing: true, comments: true },
+    });
   }
 
+  // *********************U P D A T E WITH COMMENT ***********
   async update(id: number, updateItemDto: UpdateItemDto) {
     // ****on cherche s'il existe **
-    const item=await this.itemsRepository.findOne({where : {id:id}})
+    const item = await this.itemsRepository.findOne({
+      where: { id: id },
+      relations: { listing: true, comments: true },
+    });
 
     // ***error si il n'existe pas **
-    if(!item) throw new NotFoundException({message:"item non trouvé"})
-    
-    // **** update  le upadateDto est un object donc on peut **
-    item.name= updateItemDto.name
-    item.public=updateItemDto.public
+    if (!item) throw new NotFoundException({ message: 'item non trouvé' });
 
-    // ***************save *************
-    return await this.itemsRepository.save(item)
+    item.public = updateItemDto.public;
+
+    updateItemDto.comments.map((CreateCommentDto) =>
+      item.comments.push(new Comment(CreateCommentDto)),
+    );
+
+    // item.comments.push=
+    await this.entitymanager.save(item);
   }
 
+  // ******** D E L E T E *********************
   async remove(id: number) {
     // ****on cherche s'il existe **
-    const item=await this.itemsRepository.findOne({where : {id:id}})
+    const item = await this.itemsRepository.findOne({ where: { id: id } });
 
     // ***error si il n'existe pas **
-    if(!item) throw new NotFoundException({message:"item non trouvé"})
-    
+    if (!item) throw new NotFoundException({ message: 'item non trouvé' });
+
     // ****supprimer**
-    return await this.itemsRepository.remove(item)
+    return await this.itemsRepository.remove(item);
   }
 }
